@@ -29,6 +29,9 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -57,30 +60,34 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
 
-      - name: Build signed Release APK (if keystore secret is set)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      - name: Build APK
+        shell: bash
         env:
-          DISCODO_KEYSTORE_PATH: /tmp/discodo-release.jks
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           DISCODO_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           DISCODO_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           DISCODO_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "$DISCODO_KEYSTORE_PATH"
-          ./gradlew assembleRelease \
-            -PversionName="${{ steps.version.outputs.version_name }}" \
-            -PversionCode="${{ steps.version.outputs.version_code }}" \
-            --no-daemon
-          cp app/build/outputs/apk/release/app-release.apk "Discodo-${{ steps.version.outputs.tag_name }}.apk"
-          rm -f "$DISCODO_KEYSTORE_PATH"
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+          VERSION_NAME="${{ steps.version.outputs.version_name }}"
+          VERSION_CODE="${{ steps.version.outputs.version_code }}"
 
-      - name: Build Debug APK (fallback when signing secrets are not configured)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
-        run: |
-          ./gradlew assembleDebug \
-            -PversionName="${{ steps.version.outputs.version_name }}" \
-            -PversionCode="${{ steps.version.outputs.version_code }}" \
-            --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk "Discodo-${{ steps.version.outputs.tag_name }}-debug.apk"
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" && -n "$DISCODO_KEYSTORE_PASSWORD" && -n "$DISCODO_KEY_ALIAS" && -n "$DISCODO_KEY_PASSWORD" ]]; then
+            export DISCODO_KEYSTORE_PATH="/tmp/discodo-release.jks"
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$DISCODO_KEYSTORE_PATH"
+            ./gradlew assembleRelease \
+              -PversionName="$VERSION_NAME" \
+              -PversionCode="$VERSION_CODE" \
+              --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk "Discodo-${TAG_NAME}.apk"
+            rm -f "$DISCODO_KEYSTORE_PATH"
+          else
+            ./gradlew assembleDebug \
+              -PversionName="$VERSION_NAME" \
+              -PversionCode="$VERSION_CODE" \
+              --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk "Discodo-${TAG_NAME}-debug.apk"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
