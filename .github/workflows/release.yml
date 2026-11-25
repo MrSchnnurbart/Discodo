@@ -1,0 +1,91 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Version à publier (ex: 1.0.1)"
+        required: true
+        default: "1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, Test & Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compute version metadata
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            RAW_TAG="${GITHUB_REF_NAME}"
+          else
+            RAW_TAG="v${{ inputs.version_name }}"
+          fi
+          VERSION_NAME="${RAW_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION_NAME%%-*}"
+          MAJOR=${MAJOR:-1}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          if [[ "$VERSION_CODE" -lt 1 ]]; then
+            VERSION_CODE=${{ github.run_number }}
+          fi
+          echo "tag_name=${RAW_TAG}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Build signed Release APK (if keystore secret is set)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          DISCODO_KEYSTORE_PATH: /tmp/discodo-release.jks
+          DISCODO_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          DISCODO_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          DISCODO_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "$DISCODO_KEYSTORE_PATH"
+          ./gradlew assembleRelease \
+            -PversionName="${{ steps.version.outputs.version_name }}" \
+            -PversionCode="${{ steps.version.outputs.version_code }}" \
+            --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "Discodo-${{ steps.version.outputs.tag_name }}.apk"
+          rm -f "$DISCODO_KEYSTORE_PATH"
+
+      - name: Build Debug APK (fallback when signing secrets are not configured)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        run: |
+          ./gradlew assembleDebug \
+            -PversionName="${{ steps.version.outputs.version_name }}" \
+            -PversionCode="${{ steps.version.outputs.version_code }}" \
+            --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk "Discodo-${{ steps.version.outputs.tag_name }}-debug.apk"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: Discodo ${{ steps.version.outputs.tag_name }}
+          generate_release_notes: true
+          files: Discodo-*.apk

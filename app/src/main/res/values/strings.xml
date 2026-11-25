@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Discodo</string>
+    <string name="channel_service_name">État du service</string>
+    <string name="channel_service_desc">Notification persistante indiquant l\'état de la connexion au Gateway Discord</string>
+    <string name="channel_dm_name">Messages privés</string>
+    <string name="channel_dm_desc">Notifications pour les messages directs reçus sur Discord</string>
+    <string name="channel_mentions_name">Mentions</string>
+    <string name="channel_mentions_desc">Notifications pour les mentions directes</string>
+    <string name="channel_everyone_name">Mentions @everyone, @here et rôles</string>
+    <string name="channel_everyone_desc">Notifications plus discrètes pour @everyone, @here et mentions de rôles</string>
+    <string name="channel_calls_name">Appels DM entrants</string>
+    <string name="channel_calls_desc">Notifications prioritaires lors d\'un appel vocal Discord en DM</string>
+    <string name="action_stop">Arrêter</string>
+</resources>
